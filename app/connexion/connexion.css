@@ -1,0 +1,51 @@
+/* ---- Écran d'authentification ---- */
+#gate {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 1.25rem;
+}
+.gate-box {
+  width: 100%;
+  max-width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+.gate-box h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+.gate-box p { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.9rem; }
+.gate-box input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1rem;
+  text-align: center;
+  margin-bottom: 0.75rem;
+}
+.gate-box input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gate-box button {
+  width: 100%;
+  padding: 0.7rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gate-box button:disabled { opacity: 0.5; cursor: not-allowed; }
+.gate-error { color: #c0392b; font-size: 0.85rem; min-height: 1.2em; margin: 0.6rem 0 0; }
+.gate-back { display: inline-block; margin-top: 1rem; font-size: 0.85rem; color: var(--accent); text-decoration: none; }

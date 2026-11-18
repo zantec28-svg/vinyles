@@ -6,6 +6,9 @@ Répondre à l'utilisateur en français.
 
 - Développement : `npm install` puis `npm run dev` ; vérifier avec `npm run build`.
 - Ne jamais mettre de secret dans le dépôt ni dans `public/`.
+- Git : l'utilisateur autorise à pousser **directement sur `main`** (sans branche ni
+  pull request). Chaque push sur `main` est mis en ligne par Vercel en ~1 min :
+  vérifier avec `npm run build` avant de pousser.
 
 ## Organisation
 

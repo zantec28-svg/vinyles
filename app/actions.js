@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { codeConfigure, codeValide } from "@/lib/code";
+import { discogsConfigure, parCodeBarresDiscogs, rechercherDiscogs } from "@/lib/discogs";
 import { parCodeBarres, parIdentifiant, rechercher } from "@/lib/musicbrainz";
 import { ajouterVinyle, ecritureConfiguree, modifierVinyle, supprimerVinyle } from "@/lib/vinyles";
 
@@ -30,13 +31,23 @@ export async function scanner(formData) {
   if (r) return r;
   const ean = String(formData.get("ean") || "").replace(/\D/g, "");
   if (!/^\d{8,14}$/.test(ean)) return { erreur: "Code-barres invalide." };
-  try {
-    const info = await parCodeBarres(ean);
-    if (!info) return { erreur: `Code-barres ${ean} inconnu de MusicBrainz : cherche l’album par son nom.` };
-    return { ok: true, info };
-  } catch (e) {
-    return enErreur(e);
+  // Discogs d'abord (meilleure base pour les vinyles) s'il est configuré, puis MusicBrainz.
+  const sources = [
+    ...(discogsConfigure() ? [["Discogs", parCodeBarresDiscogs]] : []),
+    ["MusicBrainz", parCodeBarres],
+  ];
+  const erreurs = [];
+  for (const [, fn] of sources) {
+    try {
+      const info = await fn(ean);
+      if (info) return { ok: true, info, ean };
+    } catch (e) {
+      erreurs.push(e.message);
+    }
   }
+  if (erreurs.length === sources.length) return { erreur: erreurs.join(" ") };
+  const noms = sources.map(([n]) => n).join(" ni de ");
+  return { erreur: `Code-barres ${ean} inconnu de ${noms} : cherche l’album par son nom.` };
 }
 
 // Recherche par artiste et/ou titre -> liste d'albums au choix.
@@ -46,13 +57,18 @@ export async function chercher(formData) {
   const artiste = texte(formData.get("artiste"), 100);
   const titre = texte(formData.get("titre"), 100);
   if (!artiste && !titre) return { erreur: "Tape au moins l’artiste ou le titre." };
-  try {
-    const resultats = await rechercher(artiste, titre);
-    if (!resultats.length) return { erreur: "Aucun album trouvé : vérifie l’orthographe ou remplis les champs à la main." };
-    return { ok: true, resultats };
-  } catch (e) {
-    return enErreur(e);
+  const sources = [...(discogsConfigure() ? [rechercherDiscogs] : []), rechercher];
+  const erreurs = [];
+  for (const fn of sources) {
+    try {
+      const resultats = await fn(artiste, titre);
+      if (resultats.length) return { ok: true, resultats };
+    } catch (e) {
+      erreurs.push(e.message);
+    }
   }
+  if (erreurs.length === sources.length) return { erreur: erreurs.join(" ") };
+  return { erreur: "Aucun album trouvé : vérifie l’orthographe ou remplis les champs à la main." };
 }
 
 // Album choisi dans la liste -> infos complètes (année, label, genre, pochette).
@@ -83,7 +99,7 @@ export async function enregistrerVinyle(_etat, formData) {
     genre: texte(formData.get("genre"), 60),
     notes: texte(formData.get("notes"), 500),
     // URL Cover Art Archive, ou petite vignette de la photo (data:image/jpeg)
-    pochette: /^(https:\/\/coverartarchive\.org\/|data:image\/jpeg;base64,)/.test(pochette) ? pochette : "",
+    pochette: /^(https:\/\/coverartarchive\.org\/|https:\/\/i\.discogs\.com\/|data:image\/jpeg;base64,)/.test(pochette) ? pochette : "",
     mbid: texte(formData.get("mbid"), 40),
   };
   if (!v.artiste || !v.titre) return { erreur: "L’artiste et le titre sont obligatoires.", valeurs: v };

@@ -103,7 +103,7 @@ function Formulaire({ cible, code, onEnregistre, onFermer }) {
     return fn(fd);
   };
   function remplir(i) {
-    setV((x) => ({ ...x, artiste: i.artiste, titre: i.titre, annee: i.annee, label: i.label, genre: i.genre, mbid: i.mbid, pochette: i.pochette || x.pochette }));
+    setV((x) => ({ ...x, artiste: i.artiste || x.artiste, titre: i.titre, annee: i.annee, label: i.label, genre: i.genre, mbid: i.mbid, pochette: i.pochette || x.pochette }));
     setResultats([]);
     setLecture({ enCours: false, msg: `Trouvé : ${i.artiste} – ${i.titre}${i.annee ? ` (${i.annee})` : ""}. Vérifie puis enregistre.`, erreur: false });
   }
@@ -115,7 +115,7 @@ function Formulaire({ cible, code, onEnregistre, onFermer }) {
     occupe("Lecture du code-barres…");
     try {
       const ean = await lireCodeBarres(fichier);
-      if (!ean) return erreur("Code-barres illisible : rapproche-toi, évite les reflets, ou cherche l’album par son nom.");
+      if (!ean) return erreur("Code-barres illisible : photographie-le bien à plat, de près, sans reflet, ou cherche l’album par son nom.");
       occupe(`Code-barres ${ean} : recherche du disque…`);
       const r = await appeler(scanner, { ean });
       if (r.erreur) return erreur(r.erreur);
@@ -188,8 +188,8 @@ function Formulaire({ cible, code, onEnregistre, onFermer }) {
           {resultats.length > 0 && (
             <ul className="resultats">
               {resultats.map((a) => (
-                <li key={a.mbid}>
-                  <button type="button" onClick={() => choisirAlbum(a)} disabled={lecture.enCours}>
+                <li key={a.id}>
+                  <button type="button" onClick={() => (a.info ? remplir(a.info) : choisirAlbum(a))} disabled={lecture.enCours}>
                     <Pochette src={a.vignette} alt="" />
                     <span><b>{a.titre}</b>{a.artiste}<small>{[a.annee, a.type].filter(Boolean).join(" · ")}</small></span>
                   </button>

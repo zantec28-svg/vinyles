@@ -21,9 +21,16 @@ Répondre à l'utilisateur en français.
 - `lib/code.js` : code d'accès, variable `APP_PIN`, comparé sur le serveur. Bouton
   « Modifier » → saisie du code → gardé dans le navigateur (`localStorage`) et envoyé
   avec chaque modification ; « Verrouiller » l'efface.
-- `lib/musicbrainz.js` : reconnaissance **gratuite** (MusicBrainz, sans clé ; pochettes
-  Cover Art Archive). Recherche par code-barres ou par artiste/titre. MusicBrainz limite
-  à ~1 requête/s : les appels sont espacés. Ne pas ajouter de service payant.
+- Reconnaissance **gratuite** (ne pas ajouter de service payant), par code-barres ou
+  par artiste/titre :
+  - `lib/discogs.js` : Discogs, utilisé **en premier** s'il est configuré
+    (`DISCOGS_TOKEN`) : la meilleure base pour les codes-barres des pressages vinyles.
+    Année = celle de l'album original (« master »). 60 requêtes/min.
+  - `lib/musicbrainz.js` : MusicBrainz, sans clé, en secours (pochettes Cover Art
+    Archive). ~1 requête/s : les appels sont espacés. Beaucoup de vinyles y sont
+    enregistrés sans code-barres.
+  - Recherche par nom : expression exacte, puis mots séparés tolérant les fautes.
+  - `lib/genres.js` : genres (anglais) des deux bases -> liste en français.
 - `lib/vinyles.js` + `lib/github.js` : lecture de `data/vinyles.json` et écriture par
   commit via l'API GitHub (le disque de Vercel est en lecture seule).
 
@@ -31,13 +38,14 @@ Répondre à l'utilisateur en français.
 
 - `APP_PIN` : code d'accès pour modifier la collection.
 - `GITHUB_TOKEN` : jeton fine-grained limité au dépôt `vinyles`, Contents: Read and write.
+- `DISCOGS_TOKEN` : jeton personnel Discogs (gratuit), fortement conseillé.
 - Facultatif : `GITHUB_REPO` (défaut `zantec28-svg/vinyles`), `GITHUB_BRANCH` (défaut `main`).
 
 ## Mettre à jour la collection (data/vinyles.json)
 
 Depuis l'application : « Modifier » (code), « + Ajouter un vinyle », puis
 « 📷 Scanner le code-barres » (photo du dos du vinyle) ou « 🔍 Chercher l'album »
-(artiste et/ou titre, puis choix dans la liste). MusicBrainz fournit l'artiste, le titre,
+(artiste et/ou titre, puis choix dans la liste). Discogs ou MusicBrainz fournit l'artiste, le titre,
 l'année de sortie originale, le label, le genre et la pochette officielle. Les champs
 restent modifiables avant d'enregistrer ; « Ma photo comme pochette » remplace la pochette.
 Chaque enregistrement est un commit sur `main`, qui redéploie l'application (~1 min).
@@ -59,6 +67,6 @@ Chaque enregistrement est un commit sur `main`, qui redéploie l'application (~1
 }
 ```
 
-- `pochette` : URL Cover Art Archive, petite vignette `data:image/jpeg;base64,…`, ou vide.
+- `pochette` : URL Cover Art Archive ou `i.discogs.com`, petite vignette `data:image/jpeg;base64,…`, ou vide.
 - `genre` : Rock, Pop, Jazz, Hip-hop, Électro, Chanson française, Soul/Funk, Classique,
   Reggae, Metal, Blues, Folk, Bande originale, Autre (texte libre accepté).

@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { codeConfigure, codeValide } from "@/lib/code";
-import { identificationConfiguree, identifierVinyle } from "@/lib/identification";
+import { parCodeBarres, parIdentifiant, rechercher } from "@/lib/musicbrainz";
 import { ajouterVinyle, ecritureConfiguree, modifierVinyle, supprimerVinyle } from "@/lib/vinyles";
 
 const texte = (v, max = 200) => String(v ?? "").trim().slice(0, max);
@@ -21,22 +21,50 @@ export async function verifierCode(code) {
   return r ? { erreur: r.code ? "Code incorrect." : r.erreur } : { ok: true };
 }
 
-const TYPES_IMAGE = ["image/jpeg", "image/png", "image/webp"];
+const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const enErreur = (e) => ({ erreur: e.message || "Recherche impossible." });
 
-// Photo de la pochette (déjà réduite par le navigateur) -> infos de l'album.
-export async function identifier(formData) {
+// Code-barres scanné au dos du vinyle -> infos de l'album (MusicBrainz, gratuit).
+export async function scanner(formData) {
   const r = await refus(formData.get("code"));
   if (r) return r;
-  if (!identificationConfiguree()) return { erreur: "Reconnaissance non configurée sur le serveur (variable ANTHROPIC_API_KEY)." };
-  const m = /^data:(image\/[a-z]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(formData.get("photo") || ""));
-  if (!m || !TYPES_IMAGE.includes(m[1])) return { erreur: "Photo invalide." };
-  if (m[2].length > 5_000_000) return { erreur: "Photo trop lourde." };
+  const ean = String(formData.get("ean") || "").replace(/\D/g, "");
+  if (!/^\d{8,14}$/.test(ean)) return { erreur: "Code-barres invalide." };
   try {
-    const info = await identifierVinyle(m[2], m[1]);
-    if (!info.reconnu) return { erreur: "Pochette non reconnue : réessaie avec une photo plus nette, ou remplis les champs à la main." };
+    const info = await parCodeBarres(ean);
+    if (!info) return { erreur: `Code-barres ${ean} inconnu de MusicBrainz : cherche l’album par son nom.` };
     return { ok: true, info };
   } catch (e) {
-    return { erreur: e.message || "Reconnaissance impossible." };
+    return enErreur(e);
+  }
+}
+
+// Recherche par artiste et/ou titre -> liste d'albums au choix.
+export async function chercher(formData) {
+  const r = await refus(formData.get("code"));
+  if (r) return r;
+  const artiste = texte(formData.get("artiste"), 100);
+  const titre = texte(formData.get("titre"), 100);
+  if (!artiste && !titre) return { erreur: "Tape au moins l’artiste ou le titre." };
+  try {
+    const resultats = await rechercher(artiste, titre);
+    if (!resultats.length) return { erreur: "Aucun album trouvé : vérifie l’orthographe ou remplis les champs à la main." };
+    return { ok: true, resultats };
+  } catch (e) {
+    return enErreur(e);
+  }
+}
+
+// Album choisi dans la liste -> infos complètes (année, label, genre, pochette).
+export async function choisir(formData) {
+  const r = await refus(formData.get("code"));
+  if (r) return r;
+  const mbid = String(formData.get("mbid") || "");
+  if (!MBID.test(mbid)) return { erreur: "Album invalide." };
+  try {
+    return { ok: true, info: await parIdentifiant(mbid) };
+  } catch (e) {
+    return enErreur(e);
   }
 }
 

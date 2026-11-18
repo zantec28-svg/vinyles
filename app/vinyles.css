@@ -99,6 +99,17 @@ button, select, input { font: inherit; color: inherit; }
 .ajout .large, .lecture { grid-column: 1 / -1; }
 .lecture { margin: 0; padding: 8px 12px; border-radius: var(--radius); background: var(--bg); color: var(--muted); font-size: .9rem; }
 .lecture.erreur { color: var(--erreur); }
+.chercher { display: flex; align-items: flex-end; }
+.resultats { grid-column: 1 / -1; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.resultats button {
+  width: 100%; display: flex; gap: 10px; align-items: center; text-align: left;
+  padding: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); cursor: pointer;
+}
+.resultats button:hover { border-color: var(--accent); }
+.resultats .pochette { width: 48px; flex: 0 0 48px; box-shadow: none; }
+.resultats span { display: flex; flex-direction: column; min-width: 0; font-size: .85rem; }
+.resultats b, .resultats span { overflow: hidden; text-overflow: ellipsis; }
+.resultats small { color: var(--muted); }
 .ajout .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
 .ajout .msg { margin: 0; color: var(--muted); font-size: .9rem; }
 .ajout .msg.erreur { color: var(--erreur); }

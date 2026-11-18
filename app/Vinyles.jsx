@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { enregistrerVinyle, identifier, retirerVinyle, verifierCode } from "./actions";
+import { chercher, choisir, enregistrerVinyle, retirerVinyle, scanner, verifierCode } from "./actions";
 
 const GENRES = ["Rock", "Pop", "Jazz", "Hip-hop", "Électro", "Chanson française", "Soul/Funk", "Classique", "Reggae", "Metal", "Blues", "Folk", "Bande originale", "Autre"];
 // Code d'accès gardé dans ce navigateur (comme le Pokédex). Le stockage peut
@@ -15,8 +15,8 @@ const stockage = {
 
 const VIDE = { artiste: "", titre: "", annee: "", label: "", genre: "", notes: "", pochette: "", mbid: "" };
 
-// Réduit une photo (fichier) en JPEG de `cote` px maximum -> data URL.
-function reduire(fichier, cote, qualite) {
+// Charge une photo (fichier) dans un canvas de `cote` px maximum.
+function charger(fichier, cote) {
   return new Promise((ok, ko) => {
     const img = new Image();
     const url = URL.createObjectURL(fichier);
@@ -27,11 +27,36 @@ function reduire(fichier, cote, qualite) {
       c.height = Math.round(img.height * r);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
-      ok(c.toDataURL("image/jpeg", qualite));
+      ok(c);
     };
     img.onerror = () => { URL.revokeObjectURL(url); ko(new Error("Image illisible.")); };
     img.src = url;
   });
+}
+
+// Lit le code-barres d'une photo, entièrement dans le navigateur (gratuit) :
+// détecteur intégré du téléphone s'il existe, sinon la bibliothèque ZXing.
+async function lireCodeBarres(fichier) {
+  const canvas = await charger(fichier, 1600);
+  if ("BarcodeDetector" in window) {
+    try {
+      const d = new window.BarcodeDetector({ formats: ["ean_13", "upc_a", "ean_8", "upc_e"] });
+      const [r] = await d.detect(canvas);
+      if (r?.rawValue) return r.rawValue;
+    } catch {}
+  }
+  const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
+  const hints = new Map([
+    [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13, BarcodeFormat.UPC_A, BarcodeFormat.EAN_8, BarcodeFormat.UPC_E]],
+    [DecodeHintType.TRY_HARDER, true],
+  ]);
+  const lecteur = new BrowserMultiFormatReader(hints);
+  for (const cote of [1600, 1000]) {
+    try {
+      return lecteur.decodeFromCanvas(cote === 1600 ? canvas : await charger(fichier, cote)).getText();
+    } catch {}
+  }
+  return null;
 }
 
 function Disque() {
@@ -56,50 +81,77 @@ function Pochette({ src, alt }) {
 function Formulaire({ cible, code, onEnregistre, onFermer }) {
   const [etat, action, enCours] = useActionState(enregistrerVinyle, {});
   const [v, setV] = useState(cible || VIDE);
-  const [photo, setPhoto] = useState("");
   const [lecture, setLecture] = useState({ enCours: false, msg: "", erreur: false });
+  const [resultats, setResultats] = useState([]);
+  const champScan = useRef(null);
   const champPhoto = useRef(null);
 
   useEffect(() => {
     if (etat?.ok) {
       onEnregistre(etat.data, etat.modif);
-      if (!etat.modif) { setV(VIDE); setPhoto(""); setLecture({ enCours: false, msg: "", erreur: false }); }
+      if (!etat.modif) { setV(VIDE); setResultats([]); setLecture({ enCours: false, msg: "", erreur: false }); }
     }
   }, [etat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const maj = (champ) => (e) => setV({ ...v, [champ]: e.target.value });
+  const occupe = (msg) => setLecture({ enCours: true, msg, erreur: false });
+  const erreur = (msg) => setLecture({ enCours: false, msg, erreur: true });
+  const appeler = (fn, champs) => {
+    const fd = new FormData();
+    fd.set("code", code);
+    Object.entries(champs).forEach(([k, x]) => fd.set(k, x));
+    return fn(fd);
+  };
+  function remplir(i) {
+    setV((x) => ({ ...x, artiste: i.artiste, titre: i.titre, annee: i.annee, label: i.label, genre: i.genre, mbid: i.mbid, pochette: i.pochette || x.pochette }));
+    setResultats([]);
+    setLecture({ enCours: false, msg: `Trouvé : ${i.artiste} – ${i.titre}${i.annee ? ` (${i.annee})` : ""}. Vérifie puis enregistre.`, erreur: false });
+  }
 
-  async function photographier(e) {
+  async function scannerPhoto(e) {
     const fichier = e.target.files?.[0];
     e.target.value = "";
     if (!fichier) return;
-    setLecture({ enCours: true, msg: "Reconnaissance de la pochette…", erreur: false });
+    occupe("Lecture du code-barres…");
     try {
-      const [grande, vignette] = await Promise.all([reduire(fichier, 1024, 0.8), reduire(fichier, 240, 0.7)]);
-      setPhoto(vignette);
-      const fd = new FormData();
-      fd.set("photo", grande);
-      fd.set("code", code);
-      const r = await identifier(fd);
-      if (r.erreur) {
-        setV((x) => ({ ...x, pochette: x.pochette || vignette }));
-        setLecture({ enCours: false, msg: r.erreur, erreur: true });
-        return;
-      }
-      const i = r.info;
-      setV((x) => ({
-        ...x,
-        artiste: i.artiste, titre: i.titre, annee: i.annee, label: i.label, genre: i.genre,
-        mbid: i.mbid, pochette: i.pochette || vignette,
-      }));
-      const doute = i.confiance === "haute" ? "" : " Vérifie les informations, la reconnaissance n’est pas certaine.";
-      setLecture({ enCours: false, msg: `Reconnu : ${i.artiste} – ${i.titre}.${doute}`, erreur: i.confiance === "faible" });
+      const ean = await lireCodeBarres(fichier);
+      if (!ean) return erreur("Code-barres illisible : rapproche-toi, évite les reflets, ou cherche l’album par son nom.");
+      occupe(`Code-barres ${ean} : recherche du disque…`);
+      const r = await appeler(scanner, { ean });
+      if (r.erreur) return erreur(r.erreur);
+      remplir(r.info);
     } catch (err) {
-      setLecture({ enCours: false, msg: err.message || "Reconnaissance impossible.", erreur: true });
+      erreur(err.message || "Lecture impossible.");
     }
   }
 
-  const officielle = v.pochette.startsWith("https://");
+  async function lancerRecherche() {
+    occupe("Recherche…");
+    setResultats([]);
+    const r = await appeler(chercher, { artiste: v.artiste, titre: v.titre }).catch((err) => ({ erreur: err.message }));
+    if (r.erreur) return erreur(r.erreur);
+    setResultats(r.resultats);
+    setLecture({ enCours: false, msg: "Choisis l’album dans la liste :", erreur: false });
+  }
+
+  async function choisirAlbum(album) {
+    occupe(`Récupération de « ${album.titre} »…`);
+    const r = await appeler(choisir, { mbid: album.mbid }).catch((err) => ({ erreur: err.message }));
+    if (r.erreur) return erreur(r.erreur);
+    remplir(r.info);
+  }
+
+  async function maPhoto(e) {
+    const fichier = e.target.files?.[0];
+    e.target.value = "";
+    if (!fichier) return;
+    try {
+      const c = await charger(fichier, 240);
+      setV((x) => ({ ...x, pochette: c.toDataURL("image/jpeg", 0.7) }));
+    } catch (err) {
+      erreur(err.message);
+    }
+  }
 
   return (
     <form className="ajout" action={action} key={etat?.n || "f"}>
@@ -111,22 +163,40 @@ function Formulaire({ cible, code, onEnregistre, onFermer }) {
 
       <div className="ajout-corps">
         <div className="photo">
-          <Pochette src={v.pochette || photo} alt="Pochette" />
-          <input ref={champPhoto} type="file" accept="image/*" capture="environment" hidden onChange={photographier} />
-          <button type="button" className="btn primary" onClick={() => champPhoto.current?.click()} disabled={lecture.enCours || enCours}>
-            {lecture.enCours ? "Analyse…" : "📷 Prendre en photo"}
+          <Pochette key={v.pochette} src={v.pochette} alt="Pochette" />
+          <input ref={champScan} type="file" accept="image/*" capture="environment" hidden onChange={scannerPhoto} />
+          <input ref={champPhoto} type="file" accept="image/*" capture="environment" hidden onChange={maPhoto} />
+          <button type="button" className="btn primary" onClick={() => champScan.current?.click()} disabled={lecture.enCours || enCours}>
+            📷 Scanner le code-barres
           </button>
-          {photo && officielle && (
-            <button type="button" className="btn petit" onClick={() => setV({ ...v, pochette: photo })}>Garder ma photo</button>
-          )}
+          <button type="button" className="btn petit" onClick={() => champPhoto.current?.click()} disabled={enCours}>
+            Ma photo comme pochette
+          </button>
         </div>
 
         <div className="grille">
           <p className={lecture.erreur ? "lecture erreur" : "lecture"} role="status" aria-live="polite">
-            {lecture.msg || "Photographie la pochette : le titre, l’artiste et l’année se remplissent tout seuls."}
+            {lecture.msg || "Scanne le code-barres au dos du vinyle, ou tape l’artiste et/ou le titre puis « Chercher l’album »."}
           </p>
           <label>Artiste *<input name="artiste" required value={v.artiste} onChange={maj("artiste")} /></label>
           <label>Titre *<input name="titre" required value={v.titre} onChange={maj("titre")} /></label>
+          <div className="chercher">
+            <button type="button" className="btn" onClick={lancerRecherche} disabled={lecture.enCours || enCours || (!v.artiste.trim() && !v.titre.trim())}>
+              🔍 Chercher l’album
+            </button>
+          </div>
+          {resultats.length > 0 && (
+            <ul className="resultats">
+              {resultats.map((a) => (
+                <li key={a.mbid}>
+                  <button type="button" onClick={() => choisirAlbum(a)} disabled={lecture.enCours}>
+                    <Pochette src={a.vignette} alt="" />
+                    <span><b>{a.titre}</b>{a.artiste}<small>{[a.annee, a.type].filter(Boolean).join(" · ")}</small></span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <label>Année<input name="annee" inputMode="numeric" pattern="\d{4}" maxLength={4} placeholder="AAAA" value={v.annee} onChange={maj("annee")} /></label>
           <label>Genre<input name="genre" list="genres" value={v.genre} onChange={maj("genre")} /></label>
           <label>Label<input name="label" value={v.label} onChange={maj("label")} /></label>

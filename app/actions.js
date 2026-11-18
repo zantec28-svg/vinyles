@@ -23,6 +23,9 @@ export async function verifierCode(code) {
 }
 
 const MBID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Signale clairement l'absence du jeton Discogs (la cause la plus fréquente d'échec).
+const sansDiscogs = () =>
+  discogsConfigure() ? "" : " (Discogs n’est pas utilisé : variable DISCOGS_TOKEN absente du déploiement.)";
 const enErreur = (e) => ({ erreur: e.message || "Recherche impossible." });
 
 // Code-barres scanné au dos du vinyle -> infos de l'album (MusicBrainz, gratuit).
@@ -36,18 +39,17 @@ export async function scanner(formData) {
     ...(discogsConfigure() ? [["Discogs", parCodeBarresDiscogs]] : []),
     ["MusicBrainz", parCodeBarres],
   ];
-  const erreurs = [];
-  for (const [, fn] of sources) {
+  const bilan = [];
+  for (const [nom, fn] of sources) {
     try {
       const info = await fn(ean);
       if (info) return { ok: true, info, ean };
+      bilan.push(`inconnu de ${nom}`);
     } catch (e) {
-      erreurs.push(e.message);
+      bilan.push(`${nom} : ${e.message}`);
     }
   }
-  if (erreurs.length === sources.length) return { erreur: erreurs.join(" ") };
-  const noms = sources.map(([n]) => n).join(" ni de ");
-  return { erreur: `Code-barres ${ean} inconnu de ${noms} : cherche l’album par son nom.` };
+  return { erreur: `Code-barres ${ean} ${bilan.join(" ; ")}.${sansDiscogs()} Tu peux chercher l’album par son nom.` };
 }
 
 // Recherche par artiste et/ou titre -> liste d'albums au choix.
@@ -57,18 +59,18 @@ export async function chercher(formData) {
   const artiste = texte(formData.get("artiste"), 100);
   const titre = texte(formData.get("titre"), 100);
   if (!artiste && !titre) return { erreur: "Tape au moins l’artiste ou le titre." };
-  const sources = [...(discogsConfigure() ? [rechercherDiscogs] : []), rechercher];
-  const erreurs = [];
-  for (const fn of sources) {
+  const sources = [...(discogsConfigure() ? [["Discogs", rechercherDiscogs]] : []), ["MusicBrainz", rechercher]];
+  const bilan = [];
+  for (const [nom, fn] of sources) {
     try {
       const resultats = await fn(artiste, titre);
       if (resultats.length) return { ok: true, resultats };
+      bilan.push(`rien sur ${nom}`);
     } catch (e) {
-      erreurs.push(e.message);
+      bilan.push(`${nom} : ${e.message}`);
     }
   }
-  if (erreurs.length === sources.length) return { erreur: erreurs.join(" ") };
-  return { erreur: "Aucun album trouvé : vérifie l’orthographe ou remplis les champs à la main." };
+  return { erreur: `Aucun album trouvé (${bilan.join(" ; ")}).${sansDiscogs()} Vérifie l’orthographe ou remplis les champs à la main.` };
 }
 
 // Album choisi dans la liste -> infos complètes (année, label, genre, pochette).

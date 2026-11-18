@@ -1,16 +1,32 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { estConnecte } from "@/lib/session";
+import { codeConfigure, codeValide } from "@/lib/code";
 import { identificationConfiguree, identifierVinyle } from "@/lib/identification";
 import { ajouterVinyle, ecritureConfiguree, modifierVinyle, supprimerVinyle } from "@/lib/vinyles";
 
 const texte = (v, max = 200) => String(v ?? "").trim().slice(0, max);
+
+// Vérifie le code d'accès envoyé avec la demande (null si tout va bien).
+async function refus(code) {
+  if (!codeConfigure()) return { erreur: "Modification non configurée sur le serveur (variable APP_PIN)." };
+  if (codeValide(code)) return null;
+  await new Promise((r) => setTimeout(r, 1000)); // ralentit les essais
+  return { erreur: "Code incorrect : clique sur « Verrouiller » puis « Modifier » pour le ressaisir.", code: true };
+}
+
+// Bouton « Modifier » : le code est-il le bon ?
+export async function verifierCode(code) {
+  const r = await refus(code);
+  return r ? { erreur: r.code ? "Code incorrect." : r.erreur } : { ok: true };
+}
+
 const TYPES_IMAGE = ["image/jpeg", "image/png", "image/webp"];
 
 // Photo de la pochette (déjà réduite par le navigateur) -> infos de l'album.
 export async function identifier(formData) {
-  if (!(await estConnecte())) return { erreur: "Session expirée : reconnecte-toi." };
+  const r = await refus(formData.get("code"));
+  if (r) return r;
   if (!identificationConfiguree()) return { erreur: "Reconnaissance non configurée sur le serveur (variable ANTHROPIC_API_KEY)." };
   const m = /^data:(image\/[a-z]+);base64,([A-Za-z0-9+/=]+)$/.exec(String(formData.get("photo") || ""));
   if (!m || !TYPES_IMAGE.includes(m[1])) return { erreur: "Photo invalide." };
@@ -26,7 +42,8 @@ export async function identifier(formData) {
 
 // Ajout (sans id) ou modification (avec id) d'un vinyle.
 export async function enregistrerVinyle(_etat, formData) {
-  if (!(await estConnecte())) return { erreur: "Session expirée : reconnecte-toi." };
+  const r = await refus(formData.get("code"));
+  if (r) return r;
   if (!ecritureConfiguree()) return { erreur: "Écriture non configurée sur le serveur (variable GITHUB_TOKEN)." };
 
   const pochette = texte(formData.get("pochette"), 60_000);
@@ -54,8 +71,9 @@ export async function enregistrerVinyle(_etat, formData) {
   }
 }
 
-export async function retirerVinyle(id) {
-  if (!(await estConnecte())) return { erreur: "Session expirée : reconnecte-toi." };
+export async function retirerVinyle(id, code) {
+  const r = await refus(code);
+  if (r) return r;
   if (!ecritureConfiguree()) return { erreur: "Écriture non configurée sur le serveur (variable GITHUB_TOKEN)." };
   try {
     return { ok: true, data: await supprimerVinyle(texte(id, 40)) };

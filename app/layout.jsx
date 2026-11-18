@@ -1,7 +1,6 @@
 export const metadata = {
   title: "Mes vinyles",
   description: "Suivi de ma collection de vinyles.",
-  robots: { index: false, follow: false },
 };
 
 export const viewport = {

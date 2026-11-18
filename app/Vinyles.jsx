@@ -1,10 +1,18 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
-import { enregistrerVinyle, identifier, retirerVinyle } from "./actions";
-import { deconnexion } from "./connexion/actions";
+import { enregistrerVinyle, identifier, retirerVinyle, verifierCode } from "./actions";
 
 const GENRES = ["Rock", "Pop", "Jazz", "Hip-hop", "Électro", "Chanson française", "Soul/Funk", "Classique", "Reggae", "Metal", "Blues", "Folk", "Bande originale", "Autre"];
+// Code d'accès gardé dans ce navigateur (comme le Pokédex). Le stockage peut
+// être indisponible (navigation privée) : on fait alors sans.
+const CLE = "vinyles-code";
+const stockage = {
+  lire: () => { try { return localStorage.getItem(CLE) || ""; } catch { return ""; } },
+  ecrire: (v) => { try { localStorage.setItem(CLE, v); } catch {} },
+  effacer: () => { try { localStorage.removeItem(CLE); } catch {} },
+};
+
 const VIDE = { artiste: "", titre: "", annee: "", label: "", genre: "", notes: "", pochette: "", mbid: "" };
 
 // Réduit une photo (fichier) en JPEG de `cote` px maximum -> data URL.
@@ -45,7 +53,7 @@ function Pochette({ src, alt }) {
 }
 
 // `cible` : null pour un nouveau vinyle, sinon le vinyle à modifier.
-function Formulaire({ cible, onEnregistre, onFermer }) {
+function Formulaire({ cible, code, onEnregistre, onFermer }) {
   const [etat, action, enCours] = useActionState(enregistrerVinyle, {});
   const [v, setV] = useState(cible || VIDE);
   const [photo, setPhoto] = useState("");
@@ -71,6 +79,7 @@ function Formulaire({ cible, onEnregistre, onFermer }) {
       setPhoto(vignette);
       const fd = new FormData();
       fd.set("photo", grande);
+      fd.set("code", code);
       const r = await identifier(fd);
       if (r.erreur) {
         setV((x) => ({ ...x, pochette: x.pochette || vignette }));
@@ -95,6 +104,7 @@ function Formulaire({ cible, onEnregistre, onFermer }) {
   return (
     <form className="ajout" action={action} key={etat?.n || "f"}>
       <h2>{cible ? "Modifier le vinyle" : "Nouveau vinyle"}</h2>
+      <input type="hidden" name="code" value={code} />
       {cible && <input type="hidden" name="id" value={cible.id} />}
       <input type="hidden" name="pochette" value={v.pochette} />
       <input type="hidden" name="mbid" value={v.mbid} />
@@ -150,6 +160,34 @@ export default function Vinyles({ data: initial }) {
   const [tri, setTri] = useState("ajout");
   const [q, setQ] = useState("");
   const [msg, setMsg] = useState("");
+  const [code, setCode] = useState("");
+  const [canEdit, setCanEdit] = useState(false);
+  const [saisie, setSaisie] = useState(null); // null = champ du code fermé
+  const [verif, setVerif] = useState(false);
+
+  // Code déjà saisi sur cet appareil : on vérifie qu'il est toujours bon.
+  useEffect(() => {
+    const c = stockage.lire();
+    if (!c) return;
+    verifierCode(c).then((r) => {
+      if (r.ok) { setCode(c); setCanEdit(true); } else stockage.effacer();
+    });
+  }, []);
+
+  async function deverrouiller(e) {
+    e.preventDefault();
+    setVerif(true);
+    const r = await verifierCode(saisie);
+    setVerif(false);
+    if (!r.ok) return setMsg(r.erreur);
+    stockage.ecrire(saisie);
+    setCode(saisie); setCanEdit(true); setSaisie(null); setMsg("");
+  }
+
+  function verrouiller() {
+    stockage.effacer();
+    setCode(""); setCanEdit(false); setOuvert(null); setMsg("");
+  }
 
   const artistes = new Set(data.map((v) => v.artiste.toLowerCase())).size;
   const decennies = {};
@@ -169,7 +207,7 @@ export default function Vinyles({ data: initial }) {
 
   async function supprimer(v) {
     if (!confirm(`Retirer « ${v.titre} » de ta collection ?`)) return;
-    const r = await retirerVinyle(v.id);
+    const r = await retirerVinyle(v.id, code);
     if (r.erreur) return setMsg(r.erreur);
     setData(r.data);
     setOuvert(null);
@@ -184,16 +222,31 @@ export default function Vinyles({ data: initial }) {
           <p>Suivi de ma collection de disques.</p>
         </div>
         <div className="entete-actions">
-          {!ouvert && <button type="button" className="btn primary" onClick={() => setOuvert({ nouveau: true })}>+ Ajouter un vinyle</button>}
-          <form action={deconnexion}><button type="submit" className="btn">Se déconnecter</button></form>
+          {canEdit ? (
+            <>
+              {!ouvert && <button type="button" className="btn primary" onClick={() => setOuvert({ nouveau: true })}>+ Ajouter un vinyle</button>}
+              <button type="button" className="btn" onClick={verrouiller}>Verrouiller</button>
+            </>
+          ) : (
+            <button type="button" className="btn" aria-expanded={saisie !== null} onClick={() => { setSaisie(saisie === null ? "" : null); setMsg(""); }}>Modifier</button>
+          )}
         </div>
       </header>
 
-      {ouvert && (
+      {saisie !== null && !canEdit && (
+        <form className="code" onSubmit={deverrouiller}>
+          <input type="password" placeholder="Code d’accès" aria-label="Code d’accès" autoComplete="current-password"
+            value={saisie} onChange={(e) => setSaisie(e.target.value)} autoFocus required />
+          <button type="submit" className="btn primary" disabled={verif}>{verif ? "Vérification…" : "Valider"}</button>
+        </form>
+      )}
+
+      {ouvert && canEdit && (
         <>
           <Formulaire
             key={ouvert.nouveau ? "nouveau" : ouvert.id}
             cible={ouvert.nouveau ? null : ouvert}
+            code={code}
             onEnregistre={(d, modif) => { setData(d); setMsg(""); if (modif) setOuvert(null); }}
             onFermer={() => setOuvert(null)}
           />
@@ -235,13 +288,13 @@ export default function Vinyles({ data: initial }) {
               <span>{v.artiste}</span>
               <small>{[v.annee, v.genre].filter(Boolean).join(" · ")}</small>
             </div>
-            <button type="button" className="btn petit modif" title="Modifier" aria-label={`Modifier ${v.artiste} – ${v.titre}`}
-              onClick={() => { setOuvert(v); setMsg(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>✎</button>
+            {canEdit && <button type="button" className="btn petit modif" title="Modifier" aria-label={`Modifier ${v.artiste} – ${v.titre}`}
+              onClick={() => { setOuvert(v); setMsg(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>✎</button>}
           </li>
         ))}
       </ul>
       <div className="empty" hidden={liste.length > 0}>
-        {data.length ? "Aucun vinyle ne correspond à cette recherche." : "Ta collection est vide : ajoute ton premier vinyle en le prenant en photo."}
+        {data.length ? "Aucun vinyle ne correspond à cette recherche." : "La collection est vide pour l’instant."}
       </div>
     </div>
   );

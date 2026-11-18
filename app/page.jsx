@@ -1,10 +1,10 @@
 import "./vinyles.css";
-import { redirect } from "next/navigation";
-import { estConnecte } from "@/lib/session";
 import { lireVinyles } from "@/lib/vinyles";
 import Vinyles from "./Vinyles";
 
+// Collection visible par tous ; les modifications demandent le code (APP_PIN).
+export const dynamic = "force-dynamic";
+
 export default async function Page() {
-  if (!(await estConnecte())) redirect("/connexion");
   return <Vinyles data={await lireVinyles()} />;
 }

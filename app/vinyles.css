@@ -38,7 +38,8 @@ header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justi
 h1 { margin: 0; font-size: 1.9rem; letter-spacing: -0.02em; }
 header p { margin: 4px 0 0; color: var(--muted); }
 .entete-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.entete-actions form { margin: 0; }
+.code { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 20px; justify-content: flex-end; }
+.code input { flex: 0 1 240px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); min-width: 0; }
 button, select, input { font: inherit; color: inherit; }
 .btn {
   border: 1px solid var(--line); background: var(--surface); padding: 8px 14px;

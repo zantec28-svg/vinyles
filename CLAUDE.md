@@ -9,19 +9,21 @@ Répondre à l'utilisateur en français.
 
 ## Organisation
 
-- `app/page.jsx` : la collection (protégée). Commence par
-  `if (!(await estConnecte())) redirect("/connexion")` et ne lit les données qu'après.
+- `app/page.jsx` : la collection, **visible par tous** (même modèle que le Pokédex).
 - `app/Vinyles.jsx` : interface (liste, recherche, tri, filtres, formulaire, photo).
-- `app/actions.js` : actions serveur (reconnaissance, ajout/modification, suppression).
-- `app/connexion/` : écran de connexion. Mot de passe vérifié **sur le serveur** avec
-  la variable `ACCES_MDP` ; cookie de session signé, httpOnly, valable 2 h (`lib/session.js`).
+- `app/actions.js` : actions serveur (vérification du code, reconnaissance,
+  ajout/modification, suppression). **Chaque action qui modifie quelque chose ou
+  appelle Claude commence par vérifier le code** (`refus(code)`).
+- `lib/code.js` : code d'accès, variable `APP_PIN`, comparé sur le serveur. Bouton
+  « Modifier » → saisie du code → gardé dans le navigateur (`localStorage`) et envoyé
+  avec chaque modification ; « Verrouiller » l'efface.
 - `lib/identification.js` : reconnaissance de la pochette (Claude, puis MusicBrainz).
 - `lib/vinyles.js` + `lib/github.js` : lecture de `data/vinyles.json` et écriture par
   commit via l'API GitHub (le disque de Vercel est en lecture seule).
 
 ## Variables d'environnement (Vercel → Settings → Environment Variables)
 
-- `ACCES_MDP` : mot de passe de l'application.
+- `APP_PIN` : code d'accès pour modifier la collection.
 - `GITHUB_TOKEN` : jeton fine-grained limité au dépôt `vinyles`, Contents: Read and write.
 - `ANTHROPIC_API_KEY` : reconnaissance des pochettes.
 - Facultatif : `GITHUB_REPO` (défaut `zantec28-svg/vinyles`), `GITHUB_BRANCH` (défaut `main`).
